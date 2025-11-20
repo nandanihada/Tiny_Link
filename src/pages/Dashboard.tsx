@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { BarChart3, TrendingUp, MousePointer, Link2, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -8,83 +8,85 @@ import { LinkForm } from "@/components/LinkForm";
 import { StatsCard } from "@/components/StatsCard";
 import { EmptyState } from "@/components/EmptyState";
 import { toast } from "sonner";
-
-// Mock data
-const mockLinks = [
-  {
-    id: "1",
-    shortCode: "abc123",
-    targetUrl: "https://example.com/very-long-url-that-needs-shortening",
-    clicks: 1234,
-    lastClicked: new Date(Date.now() - 2 * 60 * 60 * 1000),
-    createdAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
-  },
-  {
-    id: "2",
-    shortCode: "def456",
-    targetUrl: "https://github.com/username/repository-name",
-    clicks: 856,
-    lastClicked: new Date(Date.now() - 5 * 60 * 60 * 1000),
-    createdAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000),
-  },
-  {
-    id: "3",
-    shortCode: "xyz789",
-    targetUrl: "https://docs.example.com/api/documentation/reference",
-    clicks: 432,
-    lastClicked: new Date(Date.now() - 24 * 60 * 60 * 1000),
-    createdAt: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000),
-  },
-];
+import { api, Link as ApiLink } from "@/lib/api";
 
 const Dashboard = () => {
   const navigate = useNavigate();
-  const [links, setLinks] = useState(mockLinks);
+  const [links, setLinks] = useState<ApiLink[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [loading, setLoading] = useState(false);
+  const [fetchingLinks, setFetchingLinks] = useState(true);
+
+  // Fetch links on component mount
+  useEffect(() => {
+    fetchLinks();
+  }, []);
+
+  const fetchLinks = async () => {
+    try {
+      setFetchingLinks(true);
+      const response = await api.getLinks({ limit: 100, sort: 'recent' });
+      setLinks(response.links);
+    } catch (error) {
+      console.error('Failed to fetch links:', error);
+      toast.error("Failed to load links", {
+        description: error instanceof Error ? error.message : "Please try again"
+      });
+    } finally {
+      setFetchingLinks(false);
+    }
+  };
 
   const handleCreateLink = async (url: string, customCode?: string) => {
     setLoading(true);
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    
-    const newLink = {
-      id: Date.now().toString(),
-      shortCode: customCode || Math.random().toString(36).substring(2, 8),
-      targetUrl: url,
-      clicks: 0,
-      lastClicked: null,
-      createdAt: new Date(),
-    };
-    
-    setLinks([newLink, ...links]);
-    setLoading(false);
-    
-    const shortUrl = `${window.location.origin}/${newLink.shortCode}`;
-    toast.success("Link created!", {
-      description: shortUrl,
-      action: {
-        label: "Copy",
-        onClick: () => {
-          navigator.clipboard.writeText(shortUrl);
-          toast.success("Copied to clipboard!");
+    try {
+      const newLink = await api.createLink({
+        originalUrl: url,
+        customCode: customCode || undefined
+      });
+
+      setLinks([newLink, ...links]);
+
+      toast.success("Link created!", {
+        description: newLink.shortUrl,
+        action: {
+          label: "Copy",
+          onClick: () => {
+            navigator.clipboard.writeText(newLink.shortUrl);
+            toast.success("Copied to clipboard!");
+          },
         },
-      },
-    });
+      });
+    } catch (error) {
+      console.error('Failed to create link:', error);
+      toast.error("Failed to create link", {
+        description: error instanceof Error ? error.message : "Please try again"
+      });
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleDeleteLink = (id: string) => {
-    setLinks(links.filter((link) => link.id !== id));
-    toast.success("Link deleted");
+  const handleDeleteLink = async (code: string) => {
+    try {
+      await api.deleteLink(code);
+      setLinks(links.filter((link) => link.code !== code));
+      toast.success("Link deleted");
+    } catch (error) {
+      console.error('Failed to delete link:', error);
+      toast.error("Failed to delete link", {
+        description: error instanceof Error ? error.message : "Please try again"
+      });
+    }
   };
 
   const filteredLinks = links.filter(
     (link) =>
-      link.shortCode.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      link.targetUrl.toLowerCase().includes(searchQuery.toLowerCase())
+      link.code.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      link.originalUrl.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const totalClicks = links.reduce((sum, link) => sum + link.clicks, 0);
+  const totalClicks = links.reduce((sum, link) => sum + link.clickCount, 0);
 
   return (
     <div className="min-h-screen bg-background">
@@ -116,7 +118,7 @@ const Dashboard = () => {
             <p className="text-lg text-muted-foreground md:text-xl">
               Shorten links, track clicks, own your connections
             </p>
-            
+
             {/* Quick Stats */}
             <div className="flex flex-wrap items-center justify-center gap-4">
               <div className="flex items-center gap-2 rounded-full bg-card/50 px-4 py-2 backdrop-blur-sm">
@@ -129,7 +131,7 @@ const Dashboard = () => {
               </div>
               <div className="flex items-center gap-2 rounded-full bg-card/50 px-4 py-2 backdrop-blur-sm">
                 <TrendingUp className="h-5 w-5 text-accent" />
-                <span className="font-semibold text-foreground">↑ 23% vs Last Month</span>
+                <span className="font-semibold text-foreground">Live Data</span>
               </div>
             </div>
           </div>
@@ -147,20 +149,18 @@ const Dashboard = () => {
             icon={MousePointer}
             label="Total Clicks"
             value={totalClicks.toLocaleString()}
-            trend={{ value: "15%", positive: true }}
             color="emerald"
           />
           <StatsCard
             icon={TrendingUp}
             label="Avg Clicks/Link"
             value={links.length > 0 ? Math.round(totalClicks / links.length) : 0}
-            trend={{ value: "8%", positive: true }}
             color="coral"
           />
           <StatsCard
             icon={Link2}
             label="Active Today"
-            value={links.filter((l) => l.lastClicked && Date.now() - l.lastClicked.getTime() < 24 * 60 * 60 * 1000).length}
+            value={links.filter((l) => l.lastClickedAt && Date.now() - new Date(l.lastClickedAt).getTime() < 24 * 60 * 60 * 1000).length}
             color="golden"
           />
         </div>
@@ -172,7 +172,11 @@ const Dashboard = () => {
 
         {/* Links Display Section */}
         <section>
-          {links.length > 0 ? (
+          {fetchingLinks ? (
+            <div className="rounded-xl border-2 border-dashed border-border bg-card/50 p-8 text-center">
+              <p className="text-muted-foreground">Loading links...</p>
+            </div>
+          ) : links.length > 0 ? (
             <>
               {/* Search Bar */}
               <div className="mb-6 flex items-center gap-4">
@@ -197,13 +201,13 @@ const Dashboard = () => {
                   {filteredLinks.map((link) => (
                     <LinkCard
                       key={link.id}
-                      shortCode={link.shortCode}
-                      targetUrl={link.targetUrl}
-                      clicks={link.clicks}
-                      lastClicked={link.lastClicked}
-                      createdAt={link.createdAt}
-                      onDelete={() => handleDeleteLink(link.id)}
-                      onViewStats={() => navigate(`/${link.shortCode}`)}
+                      shortCode={link.code}
+                      targetUrl={link.originalUrl}
+                      clicks={link.clickCount}
+                      lastClicked={link.lastClickedAt ? new Date(link.lastClickedAt) : null}
+                      createdAt={new Date(link.createdAt)}
+                      onDelete={() => handleDeleteLink(link.code)}
+                      onViewStats={() => navigate(`/stats/${link.code}`)}
                     />
                   ))}
                 </div>

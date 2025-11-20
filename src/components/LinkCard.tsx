@@ -24,7 +24,8 @@ export const LinkCard = ({
   onViewStats,
 }: LinkCardProps) => {
   const copyToClipboard = () => {
-    const shortUrl = `${window.location.origin}/${shortCode}`;
+    const backendUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+    const shortUrl = `${backendUrl}/${shortCode}`;
     navigator.clipboard.writeText(shortUrl);
     toast.success("Link copied!", {
       description: shortUrl,
@@ -39,7 +40,7 @@ export const LinkCard = ({
     <Card className="group relative overflow-hidden border-2 border-border bg-card hover-lift p-6 transition-smooth hover:border-primary/50">
       {/* Gradient overlay on hover */}
       <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-secondary/5 opacity-0 transition-opacity group-hover:opacity-100" />
-      
+
       <div className="relative space-y-4">
         {/* Short Code Display */}
         <div className="flex items-center justify-between">
@@ -78,7 +79,7 @@ export const LinkCard = ({
               <BarChart3 className="h-3 w-3" />
               <span>Clicks</span>
             </div>
-            <p className="text-2xl font-bold text-primary">{clicks.toLocaleString()}</p>
+            <p className="text-2xl font-bold text-primary">{(clicks || 0).toLocaleString()}</p>
           </div>
           <div className="space-y-1">
             <div className="flex items-center gap-1 text-xs text-muted-foreground">
